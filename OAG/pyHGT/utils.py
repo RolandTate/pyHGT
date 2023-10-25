@@ -40,7 +40,7 @@ def sparse_mx_to_torch_sparse_tensor(sparse_mx):
     return torch.sparse.FloatTensor(indices, values, shape)
 
 def randint():
-    return np.random.randint(2**32 - 1)
+    return np.random.randint(2**32 - 1, dtype=np.int64)
 
 
 

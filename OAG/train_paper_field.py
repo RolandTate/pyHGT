@@ -11,16 +11,16 @@ parser = argparse.ArgumentParser(description='Training GNN on Paper-Field (L2) c
 '''
     Dataset arguments
 '''
-parser.add_argument('--data_dir', type=str, default='./dataset/oag_output',
+parser.add_argument('--data_dir', type=str, default='../data/oag_output/',
                     help='The address of preprocessed graph.')
-parser.add_argument('--model_dir', type=str, default='./model_save',
+parser.add_argument('--model_dir', type=str, default='../model_save',
                     help='The address for storing the models and optimization results.')
 parser.add_argument('--task_name', type=str, default='PF',
                     help='The name of the stored models and optimization results.')
 parser.add_argument('--cuda', type=int, default=0,
                     help='Avaiable GPU ID')
 parser.add_argument('--domain', type=str, default='_CS',
-                    help='CS, Medicion or All: _CS or _Med or (empty)')         
+                    help='CS, Medicion or All: _CS or _Med or (empty)')
 '''
    Model arguments 
 '''
@@ -50,16 +50,18 @@ parser.add_argument('--data_percentage', type=float, default=1.0,
                     help='Percentage of training and validation data to use')
 parser.add_argument('--n_epoch', type=int, default=200,
                     help='Number of epoch to run')
-parser.add_argument('--n_pool', type=int, default=4,
-                    help='Number of process to sample subgraph')    
+# parser.add_argument('--n_pool', type=int, default=4,
+#                     help='Number of process to sample subgraph')
+parser.add_argument('--n_pool', type=int, default=1,
+                    help='Number of process to sample subgraph')
 parser.add_argument('--n_batch', type=int, default=32,
-                    help='Number of batch (sampled graphs) for each epoch') 
+                    help='Number of batch (sampled graphs) for each epoch')
 parser.add_argument('--repeat', type=int, default=2,
-                    help='How many time to train over a singe batch (reuse data)') 
+                    help='How many time to train over a singe batch (reuse data)')
 parser.add_argument('--batch_size', type=int, default=256,
-                    help='Number of output nodes for training')    
+                    help='Number of output nodes for training')
 parser.add_argument('--clip', type=float, default=0.25,
-                    help='Gradient Norm Clipping') 
+                    help='Gradient Norm Clipping')
 
 
 args = parser.parse_args()
@@ -120,7 +122,7 @@ def node_classification_sample(seed, pairs, time_range):
         if i[1] >= args.batch_size:
             masked_edge_list += [i]
     edge_list['field']['paper']['PF_in_L2'] = masked_edge_list
-    
+
     '''
         (4) Transform the subgraph into torch Tensor (edge_index is in format of pytorch_geometric)
     '''
@@ -137,7 +139,7 @@ def node_classification_sample(seed, pairs, time_range):
     ylabel /= ylabel.sum(axis=1).reshape(-1, 1)
     x_ids = np.arange(args.batch_size) + node_dict['paper'][0]
     return node_feature, node_type, edge_time, edge_index, edge_type, x_ids, ylabel
-    
+
 def prepare_data(pool):
     '''
         Sampled and prepare training and validation data using multi-process parallization.
@@ -183,7 +185,7 @@ np.random.seed(43)
 sel_train_pairs = {p : train_pairs[p] for p in np.random.choice(list(train_pairs.keys()), int(len(train_pairs) * args.data_percentage), replace = False)}
 sel_valid_pairs = {p : valid_pairs[p] for p in np.random.choice(list(valid_pairs.keys()), int(len(valid_pairs) * args.data_percentage), replace = False)}
 
-            
+
 '''
     Initialize GNN (model is specified by conv_name) and Classifier
 '''
@@ -230,7 +232,7 @@ for epoch in np.arange(args.n_epoch) + 1:
     jobs = prepare_data(pool)
     et = time.time()
     print('Data Preparation: %.1fs' % (et - st))
-    
+
     '''
         Train (time < 2015)
     '''
@@ -244,7 +246,7 @@ for epoch in np.arange(args.n_epoch) + 1:
             res  = classifier.forward(node_rep[x_ids])
             loss = criterion(res, torch.FloatTensor(ylabel).to(device))
 
-            optimizer.zero_grad() 
+            optimizer.zero_grad()
             torch.cuda.empty_cache()
             loss.backward()
 
@@ -265,7 +267,7 @@ for epoch in np.arange(args.n_epoch) + 1:
                                    edge_time.to(device), edge_index.to(device), edge_type.to(device))
         res  = classifier.forward(node_rep[x_ids])
         loss = criterion(res, torch.FloatTensor(ylabel).to(device))
-        
+
         '''
             Calculate Valid NDCG. Update the best model based on highest NDCG score.
         '''
@@ -273,12 +275,12 @@ for epoch in np.arange(args.n_epoch) + 1:
         for ai, bi in zip(ylabel, res.argsort(descending = True)):
             valid_res += [ai[bi.cpu().numpy()]]
         valid_ndcg = np.average([ndcg_at_k(resi, len(resi)) for resi in valid_res])
-        
+
         if valid_ndcg > best_val:
             best_val = valid_ndcg
             torch.save(model, os.path.join(args.model_dir, args.task_name + '_' + args.conv_name))
             print('UPDATE!!!')
-        
+
         st = time.time()
         print(("Epoch: %d (%.1fs)  LR: %.5f Train Loss: %.2f  Valid Loss: %.2f  Valid NDCG: %.4f") % \
               (epoch, (st-et), optimizer.param_groups[0]['lr'], np.average(train_losses), \
